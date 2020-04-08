@@ -4,6 +4,7 @@
 
 Copyright (C) 2007 Rivo Laks <rivolaks@hot.ee>
 Copyright (C) 2008 Lucas Murray <lmurray@undefinedfire.com>
+Copyright (C) 2020 Javier Cordero <javier@imaginary.tech>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -51,7 +52,9 @@ public:
 
 public Q_SLOTS:
     void toggleScreenInversion();
-    void toggleWindow();
+    void toggleWindowInversion();
+    void toggleScreenInversionPlusHue();
+    void toggleWindowInversionPlusHue();
     void slotWindowClosed(KWin::EffectWindow *w);
 
 protected:
@@ -60,9 +63,12 @@ protected:
 private:
     bool m_inited;
     bool m_valid;
-    GLShader* m_shader;
-    bool m_allWindows;
-    QList<EffectWindow*> m_windows;
+    GLShader* m_invert_shader;
+    GLShader* m_invert_plus_hue_shader;
+    bool m_allWindowsInvert;
+    bool m_allWindowsInvertPlusHue;
+    QList<EffectWindow*> m_windows_invert;
+    QList<EffectWindow*> m_windows_invert_plus_hue;
 };
 
 inline int InvertEffect::requestedEffectChainPosition() const

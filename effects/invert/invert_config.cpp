@@ -3,6 +3,7 @@
  This file is part of the KDE project.
 
 Copyright (C) 2007 Rivo Laks <rivolaks@hot.ee>
+Copyright (C) 2020 Javier Cordero <javier@imaginary.tech>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -59,6 +60,18 @@ InvertEffectConfig::InvertEffectConfig(QWidget* parent, const QVariantList& args
     b->setProperty("isConfigurationAction", true);
     KGlobalAccel::self()->setDefaultShortcut(b, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_U);
     KGlobalAccel::self()->setShortcut(b, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_U);
+
+    QAction* c = actionCollection->addAction(QStringLiteral("InvertPlusHue"));
+    c->setText(i18n("Toggle Invert Plus Hue Effect"));
+    c->setProperty("isConfigurationAction", true);
+    KGlobalAccel::self()->setDefaultShortcut(c, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_H);
+    KGlobalAccel::self()->setShortcut(c, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_H);
+
+    QAction* d = actionCollection->addAction(QStringLiteral("InvertPlusHueWindow"));
+    d->setText(i18n("Toggle Invert Plus Hue Effect on Window"));
+    d->setProperty("isConfigurationAction", true);
+    KGlobalAccel::self()->setDefaultShortcut(d, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_G);
+    KGlobalAccel::self()->setShortcut(d, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_G);
 
     mShortcutEditor = new KShortcutsEditor(actionCollection, this,
                                            KShortcutsEditor::GlobalAction, KShortcutsEditor::LetterShortcutsDisallowed);

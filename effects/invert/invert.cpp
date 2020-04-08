@@ -4,6 +4,7 @@
 
 Copyright (C) 2007 Rivo Laks <rivolaks@hot.ee>
 Copyright (C) 2008 Lucas Murray <lmurray@undefinedfire.com>
+Copyright (C) 2020 Javier Cordero <javier@imaginary.tech>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,8 +38,10 @@ namespace KWin
 InvertEffect::InvertEffect()
     :   m_inited(false),
         m_valid(true),
-        m_shader(nullptr),
-        m_allWindows(false)
+        m_invert_shader(nullptr),
+        m_invert_plus_hue_shader(nullptr),
+        m_allWindowsInvert(false),
+        m_allWindowsInvertPlusHue(false)
 {
     QAction* a = new QAction(this);
     a->setObjectName(QStringLiteral("Invert"));
@@ -54,14 +57,31 @@ InvertEffect::InvertEffect()
     KGlobalAccel::self()->setDefaultShortcut(b, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_U);
     KGlobalAccel::self()->setShortcut(b, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_U);
     effects->registerGlobalShortcut(Qt::CTRL + Qt::META + Qt::Key_U, b);
-    connect(b, &QAction::triggered, this, &InvertEffect::toggleWindow);
+    connect(b, &QAction::triggered, this, &InvertEffect::toggleWindowInversion);
+
+    QAction* c = new QAction(this);
+    c->setObjectName(QStringLiteral("InvertPlusHue"));
+    c->setText(i18n("Toggle Invert Plus Hue Effect"));
+    KGlobalAccel::self()->setDefaultShortcut(c, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_H);
+    KGlobalAccel::self()->setShortcut(c, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_H);
+    effects->registerGlobalShortcut(Qt::CTRL + Qt::META + Qt::Key_H, c);
+    connect(c, &QAction::triggered, this, &InvertEffect::toggleScreenInversionPlusHue);
+
+    QAction* d = new QAction(this);
+    d->setObjectName(QStringLiteral("InvertPlusHueWindow"));
+    d->setText(i18n("Toggle Invert Plus Hue Effect on Window"));
+    KGlobalAccel::self()->setDefaultShortcut(d, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_G);
+    KGlobalAccel::self()->setShortcut(d, QList<QKeySequence>() << Qt::CTRL + Qt::META + Qt::Key_G);
+    effects->registerGlobalShortcut(Qt::CTRL + Qt::META + Qt::Key_G, d);
+    connect(d, &QAction::triggered, this, &InvertEffect::toggleWindowInversionPlusHue);
 
     connect(effects, &EffectsHandler::windowClosed, this, &InvertEffect::slotWindowClosed);
 }
 
 InvertEffect::~InvertEffect()
 {
-    delete m_shader;
+    delete m_invert_shader;
+    delete m_invert_plus_hue_shader;
 }
 
 bool InvertEffect::supported()
@@ -73,9 +93,10 @@ bool InvertEffect::loadData()
 {
     m_inited = true;
 
-    m_shader = ShaderManager::instance()->generateShaderFromResources(ShaderTrait::MapTexture, QString(), QStringLiteral("invert.frag"));
-    if (!m_shader->isValid()) {
-        qCCritical(KWINEFFECTS) << "The shader failed to load!";
+    m_invert_shader = ShaderManager::instance()->generateShaderFromResources(ShaderTrait::MapTexture, QString(), QStringLiteral("invert.frag"));
+    m_invert_plus_hue_shader = ShaderManager::instance()->generateShaderFromResources(ShaderTrait::MapTexture, QString(), QStringLiteral("invert-plus-hue.frag"));
+    if (!m_invert_shader->isValid() || !m_invert_plus_hue_shader->isValid()) {
+        qCCritical(KWINEFFECTS) << "The shaders failed to load!";
         return false;
     }
 
@@ -88,58 +109,121 @@ void InvertEffect::drawWindow(EffectWindow* w, int mask, const QRegion &region, 
     if (m_valid && !m_inited)
         m_valid = loadData();
 
-    bool useShader = m_valid && (m_allWindows != m_windows.contains(w));
-    if (useShader) {
+    const bool invertWindow = m_windows_invert.contains(w);
+    const bool invertPlusHueWindow = m_windows_invert_plus_hue.contains(w);
+    bool useInvertShader = false;
+    bool useInvertPlusHueShader = false;
+    if (m_valid) {
+        if (m_allWindowsInvert) {
+            if (invertPlusHueWindow)
+                useInvertPlusHueShader = true;
+            else if (!invertWindow)
+                useInvertShader = true;
+        }
+        else if (m_allWindowsInvertPlusHue) {
+            if (invertWindow)
+                useInvertShader = true;
+            else if (!invertPlusHueWindow)
+                useInvertPlusHueShader = true;
+        }
+        else {
+            if (invertWindow)
+                useInvertShader = true;
+            else if (invertPlusHueWindow)
+                useInvertPlusHueShader = true;
+        }
+    }
+    if (useInvertShader) {
         ShaderManager *shaderManager = ShaderManager::instance();
-        shaderManager->pushShader(m_shader);
+        shaderManager->pushShader(m_invert_shader);
 
-        data.shader = m_shader;
+        data.shader = m_invert_shader;
+    }
+    else if (useInvertPlusHueShader) {
+        ShaderManager *shaderManager = ShaderManager::instance();
+        shaderManager->pushShader(m_invert_plus_hue_shader);
+
+        data.shader = m_invert_plus_hue_shader;
     }
 
     effects->drawWindow(w, mask, region, data);
 
-    if (useShader) {
+    if (useInvertShader || useInvertPlusHueShader) {
         ShaderManager::instance()->popShader();
     }
 }
 
 void InvertEffect::paintEffectFrame(KWin::EffectFrame* frame, const QRegion &region, double opacity, double frameOpacity)
 {
-    if (m_valid && m_allWindows) {
-        frame->setShader(m_shader);
-        ShaderBinder binder(m_shader);
-        effects->paintEffectFrame(frame, region, opacity, frameOpacity);
-    } else {
-        effects->paintEffectFrame(frame, region, opacity, frameOpacity);
+    if (m_valid) {
+        if (m_allWindowsInvert) {
+            frame->setShader(m_invert_shader);
+            ShaderBinder binder(m_invert_shader);
+            effects->paintEffectFrame(frame, region, opacity, frameOpacity);
+        }
+        else if (m_allWindowsInvertPlusHue) {
+            frame->setShader(m_invert_plus_hue_shader);
+            ShaderBinder binder(m_invert_plus_hue_shader);
+            effects->paintEffectFrame(frame, region, opacity, frameOpacity);
+        }
     }
+    else
+        effects->paintEffectFrame(frame, region, opacity, frameOpacity);
 }
 
 void InvertEffect::slotWindowClosed(EffectWindow* w)
 {
-    m_windows.removeOne(w);
+    m_windows_invert.removeOne(w);
+    m_windows_invert_plus_hue.removeOne(w);
 }
 
-void InvertEffect::toggleScreenInversion()
-{
-    m_allWindows = !m_allWindows;
-    effects->addRepaintFull();
-}
-
-void InvertEffect::toggleWindow()
+void InvertEffect::toggleWindowInversion()
 {
     if (!effects->activeWindow()) {
         return;
     }
-    if (!m_windows.contains(effects->activeWindow()))
-        m_windows.append(effects->activeWindow());
+    if (!m_windows_invert.contains(effects->activeWindow())) {
+        if (m_windows_invert_plus_hue.contains(effects->activeWindow()))
+            m_windows_invert_plus_hue.removeOne(effects->activeWindow());
+        m_windows_invert.append(effects->activeWindow());
+    }
     else
-        m_windows.removeOne(effects->activeWindow());
+        m_windows_invert.removeOne(effects->activeWindow());
     effects->activeWindow()->addRepaintFull();
+}
+
+void InvertEffect::toggleWindowInversionPlusHue()
+{
+    if (!effects->activeWindow()) {
+        return;
+    }
+    if (!m_windows_invert_plus_hue.contains(effects->activeWindow())) {
+        if (m_windows_invert.contains(effects->activeWindow()))
+            m_windows_invert.removeOne(effects->activeWindow());
+        m_windows_invert_plus_hue.append(effects->activeWindow());
+    }
+    else
+        m_windows_invert_plus_hue.removeOne(effects->activeWindow());
+    effects->activeWindow()->addRepaintFull();
+}
+
+void InvertEffect::toggleScreenInversion()
+{
+    m_allWindowsInvert = !m_allWindowsInvert;
+    m_allWindowsInvertPlusHue = false;
+    effects->addRepaintFull();
+}
+
+void InvertEffect::toggleScreenInversionPlusHue()
+{
+    m_allWindowsInvertPlusHue = !m_allWindowsInvertPlusHue;
+    m_allWindowsInvert = false;
+    effects->addRepaintFull();
 }
 
 bool InvertEffect::isActive() const
 {
-    return m_valid && (m_allWindows || !m_windows.isEmpty());
+    return m_valid && (m_allWindowsInvert || m_allWindowsInvertPlusHue || !m_windows_invert.isEmpty() || !m_windows_invert_plus_hue.isEmpty());
 }
 
 bool InvertEffect::provides(Feature f)
